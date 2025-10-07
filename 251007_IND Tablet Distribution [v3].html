@@ -47,7 +47,7 @@ let showRed = true;
 let showInfo = true;
 
 async function loadData() {
-  const res = await fetch("https://raw.githubusercontent.com/Caleb-ODwyer/VGR-Tablet-Map/refs/heads/main/map_data_IND.json");
+  const res = await fetch("https://raw.githubusercontent.com/Caleb-ODwyer/VGR-Tablet-Map/refs/heads/main/map_data_IND-Github.json");
   allData = await res.json();
   populateFilters();
   drawMarkers();
@@ -254,3 +254,4 @@ window.initMap = initMap;
 </script>
 </body>
 </html>
+
