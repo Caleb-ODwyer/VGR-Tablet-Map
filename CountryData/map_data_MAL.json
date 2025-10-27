@@ -1,0 +1,46 @@
+[
+  {
+    "type": "Hero",
+    "city": "Puchong",
+    "state": "SELANGOR",
+    "country": "Malaysia",
+    "year": "Unknown",
+    "color": "#41ab5d",
+    "lat": 3.0327152,
+    "lon": 101.618802,
+    "failed": false
+  },
+  {
+    "type": "Hero",
+    "city": "Melaka",
+    "state": "",
+    "country": "Malaysia",
+    "year": "Unknown",
+    "color": "#41ab5d",
+    "lat": 2.189594,
+    "lon": 102.2500868,
+    "failed": false
+  },
+  {
+    "type": "YF",
+    "city": "Puchong",
+    "state": "Selangor",
+    "country": "Malaysia",
+    "year": "Unknown",
+    "color": "#FFA500",
+    "lat": 3.0327152,
+    "lon": 101.618802,
+    "failed": false
+  },
+  {
+    "type": "YF",
+    "city": "Muar,Johor,Malaysia",
+    "state": "Malaysia",
+    "country": "Malaysia",
+    "year": "Unknown",
+    "color": "#FFA500",
+    "lat": 2.0630519,
+    "lon": 102.5848717,
+    "failed": false
+  }
+]
