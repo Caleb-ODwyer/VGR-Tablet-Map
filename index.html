@@ -15,23 +15,44 @@
       border-radius: 4px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.3);
     }
-    select { margin: 5px 0; width: 150px; }
-
-    .gm-ui-hover-effect {
-      display: none !important;
+    .dropdown { position: relative; display: block; margin-bottom: 8px; }
+    .dropbtn {
+      background: white; border: 1px solid #ccc; padding: 5px 10px;
+      border-radius: 4px; cursor: pointer; width: 160px; text-align: left;
     }
+    .dropdown-content {
+      display: none; position: relative; background-color: #fff;
+      min-width: 160px; max-height: 200px; overflow-y: auto;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2); z-index: 10; padding: 5px; margin-top: 4px;
+    }
+    .dropdown-content label { display: block; cursor: pointer; }
+    .dropdown.show .dropdown-content { display: block; }
+    .gm-ui-hover-effect { display: none !important; }
   </style>
 </head>
 <body>
 <div id="filters">
-  <label for="countryFilter">Country:</label>
-  <select id="countryFilter"><option value="all">All</option></select><br>
-  <label for="tabletFilter">Tablet:</label>
-  <select id="tabletFilter"><option value="all">All</option></select><br>
-  <label for="yearFilter">Year:</label>
-  <select id="yearFilter"><option value="all">All</option></select><br>
-  <label><input type="checkbox" id="showRed" checked> Show Error Markers</label><br>
-  <label><input type="checkbox" id="showInfo" checked> Show Marker Info</label>
+  <div class="dropdown">
+    <button class="dropbtn">Country ▾</button>
+    <div id="countryFilter" class="dropdown-content"></div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Menu ▾</button>
+    <div id="tabletFilter" class="dropdown-content"></div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Year ▾</button>
+    <div id="yearFilter" class="dropdown-content"></div>
+  </div>
+  <div class="dropdown">
+    <button class="dropbtn">Other ▾</button>
+    <div id="otherFilter" class="dropdown-content">
+      <label><input type="checkbox" id="showRed" checked> Show Error Markers</label>
+      <label><input type="checkbox" id="showInfo" checked> Show Marker Info</label>
+      <label><input type="checkbox" id="showVGRTeams" checked> Show VGR Teams</label>
+      <label><input type="checkbox" id="showYF" checked> Show YF Account Locations</label>
+    </div>
+  </div>
 </div>
 
 <div id="map"></div>
@@ -39,16 +60,30 @@
 <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
 <script>
 const { MarkerClusterer, SuperClusterAlgorithm } = window.markerClusterer;
+
 let map, allData = [];
-let greenCluster = null, redCluster = null;
-let greenMarkerObjs = [], redMarkerObjs = [];
-let greenClusterMarkerObjs = [], redClusterMarkerObjs = [];
-let showRed = true;
-let showInfo = true;
+let greenCluster=null, redCluster=null, yfCluster=null;
+let greenMarkerObjs=[], redMarkerObjs=[], yfMarkerObjs=[];
+let greenClusterMarkerObjs=[], redClusterMarkerObjs=[], yfClusterMarkerObjs=[];
+let showRed=true, showInfo=true, showVGRTeams=true, showYF=true;
 
 async function loadData() {
-  const res = await fetch("map_data_IND-Github.json");
-  allData = await res.json();
+  // Fetch the countries list from inside the CountryData folder
+  const countryList = await (await fetch("CountryData/countries.json")).json();
+  allData = [];
+
+  for (const c of countryList) {
+    try {
+      // Fetch each country's JSON from the same folder
+      const res = await fetch(`CountryData/map_data_${c}.json?nocache=${Date.now()}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      allData.push(...data);
+    } catch(e) { 
+      console.warn(`Could not load data for ${c}:`, e); 
+    }
+  }
+
   populateFilters();
   drawMarkers();
   addToggleListener();
@@ -56,160 +91,226 @@ async function loadData() {
 
 function initMap() {
   map = new google.maps.Map(document.getElementById("map"), {
-    center: { lat: -25.0, lng: 133.0 },
-    zoom: 4
+    center: { lat: -25.0, lng: 133.0 }, zoom: 4,
+    minZoom: 2, maxZoom: 18,
+    mapTypeId: 'roadmap',
+    streetViewControl: false,
+    mapTypeControl: false,
+    fullscreenControl: false,
+    gestureHandling: "greedy",
+    restriction: { latLngBounds: { north:85,south:-85,west:-180,east:180 }, strictBounds:true }
   });
   loadData();
-  document.getElementById("countryFilter").addEventListener("change", drawMarkers);
-  document.getElementById("tabletFilter").addEventListener("change", drawMarkers);
-  document.getElementById("yearFilter").addEventListener("change", drawMarkers);
 }
 
 function addToggleListener() {
-  document.getElementById("showRed").addEventListener("change", e => {
-    showRed = e.target.checked;
-    drawMarkers();
-  });
-
-  document.getElementById("showInfo").addEventListener("change", e => {
-    showInfo = e.target.checked;
-    drawMarkers();
-  });
+  document.getElementById("showRed").addEventListener("change", e=>{ showRed=e.target.checked; drawMarkers(); });
+  document.getElementById("showInfo").addEventListener("change", e=>{ showInfo=e.target.checked; drawMarkers(); });
+  document.getElementById("showVGRTeams").addEventListener("change", e=>{ showVGRTeams=e.target.checked; drawMarkers(); });
+  document.getElementById("showYF").addEventListener("change", e=>{ showYF=e.target.checked; drawMarkers(); });
 }
 
 function populateFilters() {
   const countries = [...new Set(allData.map(d => d.country))].sort();
-  const tablets = [...new Set(allData.map(d => d.tablet))].sort();
+  const types = [...new Set(allData.map(d => d.type))].sort();
   const years = [...new Set(allData.map(d => d.year))].sort();
 
-  const countrySelect = document.getElementById("countryFilter");
-  countries.forEach(c => countrySelect.add(new Option(c, c)));
-  const tabletSelect = document.getElementById("tabletFilter");
-  tablets.forEach(t => tabletSelect.add(new Option(t, t)));
-  const yearSelect = document.getElementById("yearFilter");
-  years.forEach(y => yearSelect.add(new Option(y, y)));
-}
-
-// helper to safely remove & clear arrays of markers
-function removeAndClear(arr) {
-  if (!arr || arr.length === 0) return;
-  arr.forEach(m => {
-    try { google.maps.event.clearInstanceListeners(m); } catch (e) {}
-    try { m.setMap(null); } catch (e) {}
+  // Compute counts for tablet types
+  const typeCounts = {};
+  allData.forEach(d => {
+    typeCounts[d.type] = (typeCounts[d.type] || 0) + (d.count || 1);
   });
-  arr.length = 0;
+
+  createCheckboxFilter("countryFilter", countries);
+  createCheckboxFilter("tabletFilter", types, typeCounts);
+  createCheckboxFilter("yearFilter", years);
+
+  // Add dropdown toggle listeners (this was missing)
+  document.querySelectorAll(".dropbtn").forEach(btn=>{
+    btn.addEventListener("click", e=>{
+      e.stopPropagation();
+      const dropdown = e.target.closest(".dropdown");
+      const isOpen = dropdown.classList.contains("show");
+      document.querySelectorAll(".dropdown").forEach(d=>d.classList.remove("show"));
+      if(!isOpen) dropdown.classList.add("show");
+    });
+  });
+
+  document.querySelectorAll(".dropdown-content").forEach(c=>c.addEventListener("click", e=>e.stopPropagation()));
+  window.addEventListener("click", ()=>document.querySelectorAll(".dropdown").forEach(d=>d.classList.remove("show")));
 }
 
-function clearPrevious() {
-  // clear clusterers first (defensive)
-  if (greenCluster) {
-    try { greenCluster.clearMarkers(); } catch (e) { /* ignore */ }
-    greenCluster = null;
-  }
-  if (redCluster) {
-    try { redCluster.clearMarkers(); } catch (e) { /* ignore */ }
-    redCluster = null;
-  }
+// Update createCheckboxFilter to accept counts
+function createCheckboxFilter(id, items, counts = {}) {
+  const container = document.getElementById(id);
+  container.innerHTML = "";
 
-  // remove any cluster-icons created by the renderer (these are the overlay "7" markers)
+  const showCounts = (id === "tabletFilter"); // Only show counts for Tablet Type
+
+  const allLabel = document.createElement("label");
+  allLabel.innerHTML = `<input type="checkbox" value="all" checked> All`;
+  container.appendChild(allLabel);
+
+  items.forEach(v => {
+    const total = counts[v] || 0;
+    const label = document.createElement("label");
+    label.innerHTML = showCounts
+      ? `<input type="checkbox" value="${v}"> ${v} (${total})`
+      : `<input type="checkbox" value="${v}"> ${v}`;
+    container.appendChild(label);
+  });
+
+  const allCheckbox = container.querySelector('input[value="all"]');
+  const others = [...container.querySelectorAll('input[type=checkbox]')].filter(cb => cb.value !== "all");
+
+  allCheckbox.addEventListener("change", e => { 
+    if (e.target.checked) others.forEach(cb => cb.checked = false); 
+    drawMarkers(); 
+  });
+
+  others.forEach(cb => {
+    cb.addEventListener("change", e => {
+      if (e.target.checked) allCheckbox.checked = false;
+      else if (!others.some(o => o.checked)) allCheckbox.checked = true;
+      drawMarkers();
+    });
+  });
+}
+
+function getSelectedValues(id){
+  const checked=[...document.querySelectorAll(`#${id} input[type=checkbox]:checked`)].map(cb=>cb.value);
+  return (checked.includes("all")||checked.length===0)?["all"]:checked;
+}
+
+function removeAndClear(arr){
+  if(!arr||arr.length===0) return;
+  arr.forEach(m=>{ try{ google.maps.event.clearInstanceListeners(m); } catch{} try{ m.setMap(null); } catch{} });
+  arr.length=0;
+}
+
+function clearPrevious(){
+  if(greenCluster){ try{greenCluster.clearMarkers();}catch{} greenCluster=null; }
+  if(redCluster){ try{redCluster.clearMarkers();}catch{} redCluster=null; }
+  if(yfCluster){ try{yfCluster.clearMarkers();}catch{} yfCluster=null; }
   removeAndClear(greenClusterMarkerObjs);
   removeAndClear(redClusterMarkerObjs);
-
-  // remove raw individual markers
+  removeAndClear(yfClusterMarkerObjs);
   removeAndClear(greenMarkerObjs);
   removeAndClear(redMarkerObjs);
+  removeAndClear(yfMarkerObjs);
 }
 
-function createMarker(d) {
-  const m = new google.maps.Marker({
-    position: { lat: d.lat, lng: d.lon },
-    icon: {
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: 17,
-      fillColor: d.color,
-      fillOpacity: 0.7,
-      strokeColor: "#000",
-      strokeWeight: 1
-    },
-    label: {
-      text: "1",
-      color: "white",
-      fontSize: "10px",
-      fontWeight: "bold"
-    }
+function createMarker(d){
+  let icon, zIndex;
+  if(d.type==="VGR Team"){
+    icon={url:"https://maps.google.com/mapfiles/ms/icons/blue-dot.png",scaledSize:new google.maps.Size(32,32),anchor:new google.maps.Point(16,32)};
+    zIndex=1;
+  } else {
+    icon={path:google.maps.SymbolPath.CIRCLE,scale:17,fillColor:d.color,fillOpacity:0.7,strokeColor:"#000",strokeWeight:1};
+    zIndex=2;
+  }
+  const m=new google.maps.Marker({ position:{lat:d.lat,lng:d.lon}, icon, zIndex,
+    label: d.type!=="VGR Team"?{text:String(d.count||1),color:"white",fontSize:"10px",fontWeight:"bold"}:null
   });
-  // attach meta
-  m._country = d.country;
+  m._city=d.city||""; m._state=d.state||""; m._country=d.country||""; m._type=d.type; m._year=d.year; m._count=d.count||1;
   return m;
 }
 
-function drawMarkers() {
-  // full cleanup of everything created previously
+function drawMarkers(){
   clearPrevious();
+  const countryFilter=getSelectedValues("countryFilter");
+  const typeFilter=getSelectedValues("tabletFilter");
+  const yearFilter=getSelectedValues("yearFilter");
 
-  const countryFilter = document.getElementById("countryFilter").value;
-  const tabletFilter = document.getElementById("tabletFilter").value;
-  const yearFilter = document.getElementById("yearFilter").value;
-
-  const filtered = allData.filter(d =>
-    (countryFilter === "all" || d.country === countryFilter) &&
-    (tabletFilter === "all" || d.tablet === tabletFilter) &&
-    (yearFilter === "all" || d.year === yearFilter)
+  const filteredTablets=allData.filter(d=>d.type!=="VGR Team"&&d.type!=="YF" &&
+    (countryFilter.includes("all")||countryFilter.includes(d.country)) &&
+    (typeFilter.includes("all")||typeFilter.includes(d.type)) &&
+    (yearFilter.includes("all")||yearFilter.includes(String(d.year)))
   );
 
-  // create raw markers and keep references
-  const greenMarkers = filtered.filter(d => !d.failed).map(d => {
-    const mm = createMarker(d);
-    greenMarkerObjs.push(mm);
-    return mm;
+  const filteredYF=allData.filter(d=>d.type==="YF" &&
+    (countryFilter.includes("all")||countryFilter.includes(d.country)) &&
+    (yearFilter.includes("all")||yearFilter.includes(String(d.year))) &&
+    showYF
+  );
+
+  const filteredVGRTeams=allData.filter(d=>d.type==="VGR Team" &&
+    (countryFilter.includes("all")||countryFilter.includes(d.country)) &&
+    showVGRTeams
+  );
+
+  // --- Tablet markers & cluster ---
+  const tabletMarkers=filteredTablets.map(d=>{
+    const m=createMarker(d);
+    if(showInfo){
+      const info=new google.maps.InfoWindow({ content:`${d.type} (${d.year}) ${d.count||1}<br>${d.city}, ${d.state}, ${d.country}` });
+      m.addListener("mouseover",()=>info.open(map,m));
+      m.addListener("mouseout",()=>info.close());
+    }
+    greenMarkerObjs.push(m);
+    return m;
   });
-
-  const redMarkers = showRed ? filtered.filter(d => d.failed).map(d => {
-    const mm = createMarker(d);
-    redMarkerObjs.push(mm);
-    return mm;
-  }) : [];
-
-  const algorithmSettings = new SuperClusterAlgorithm({
-    radius: 100,
-    minPoints: 1,
-    maxZoom: 30
-  });
-
-  // create / reuse green cluster
-  if (greenMarkers.length > 0) {
-    greenCluster = new MarkerClusterer({
-      map,
-      markers: greenMarkers,
-      algorithm: algorithmSettings,
-      renderer: makeRenderer("#41ab5d", "#000", false)
+  if(tabletMarkers.length>0){
+    greenCluster=new MarkerClusterer({
+      map, markers:tabletMarkers,
+      algorithm:new SuperClusterAlgorithm({radius:100,minPoints:1,maxZoom:30}),
+      renderer: makeRenderer("#41ab5d","#000",false,greenClusterMarkerObjs)
     });
   }
 
-  // create red cluster only when requested
-  if (showRed && redMarkers.length > 0) {
-    redCluster = new MarkerClusterer({
-      map,
-      markers: redMarkers,
-      algorithm: algorithmSettings,
-      renderer: makeRenderer("#FF0000", "#000", true)
-    });
-  } else {
-    // defensive removal in case something remained
-    removeAndClear(redMarkerObjs);
-    if (redCluster) {
-      try { redCluster.clearMarkers(); } catch (e) {}
-      redCluster = null;
+  // --- YF markers & cluster ---
+  const yfMarkers=filteredYF.map(d=>{
+    const m=createMarker(d);
+    if(showInfo){
+      const info=new google.maps.InfoWindow({ content:`${d.type} (${d.year}) ${d.count||1}<br>${d.city}, ${d.state}, ${d.country}` });
+      m.addListener("mouseover",()=>info.open(map,m));
+      m.addListener("mouseout",()=>info.close());
     }
-    removeAndClear(redClusterMarkerObjs);
+    yfMarkerObjs.push(m);
+    return m;
+  });
+  if(yfMarkers.length>0){
+    yfCluster=new MarkerClusterer({
+      map, markers:yfMarkers,
+      algorithm:new SuperClusterAlgorithm({radius:100,minPoints:1,maxZoom:30}),
+      renderer: makeRenderer("#FFA500","#000",false,yfClusterMarkerObjs)
+    });
+  }
+
+  // --- VGR Teams (blue, non-clustered) ---
+  filteredVGRTeams.forEach(d=>{
+    const m=createMarker(d);
+    if(showInfo){
+      const info=new google.maps.InfoWindow({ content:`VGRTeam<br>${d.city}, ${d.state}, ${d.country}` });
+      m.addListener("mouseover",()=>info.open(map,m));
+      m.addListener("mouseout",()=>info.close());
+    }
+    redMarkerObjs.push(m);
+    m.setMap(map);
+  });
+
+  // --- Optional: show failed markers as red ---
+  if(showRed){
+    allData.filter(d=>d.failed).forEach(d=>{
+      const m=createMarker(d);
+      redMarkerObjs.push(m);
+      m.setMap(map);
+    });
   }
 }
 
-// renderer now captures the cluster-marker it creates so we can explicitly remove it later
 function makeRenderer(color, stroke, isRedCluster = false) {
   const clusterArr = isRedCluster ? redClusterMarkerObjs : greenClusterMarkerObjs;
   return {
     render: ({ count, position, markers }) => {
+      if (count === 1) {
+        const single = markers[0];
+        single.setZIndex(isRedCluster ? 1 : 10);
+        single.setMap(map);
+        clusterArr.push(single);
+        return single;
+      }
+
       const clusterMarker = new google.maps.Marker({
         position,
         icon: {
@@ -225,17 +326,46 @@ function makeRenderer(color, stroke, isRedCluster = false) {
           color: "white",
           fontSize: "12px",
           fontWeight: "bold"
-        }
+        },
+        zIndex: isRedCluster ? 1 : 10
       });
 
-      // store cluster-icons so we can remove them explicitly later
+      clusterMarker.setMap(map);
       clusterArr.push(clusterMarker);
 
-      if (isRedCluster && showRed && showInfo) {
+      if (showInfo) {
         const infoWindow = new google.maps.InfoWindow();
         clusterMarker.addListener("mouseover", () => {
-          const countries = [...new Set(markers.map(m => m._country))];
-          infoWindow.setContent(`Error data for ${countries.join(", ")}`);
+          let content = "";
+
+          if (isRedCluster) {
+            const countries = [...new Set(markers.map(m => m._country))];
+            content = `Error data for ${countries.join(", ")}`;
+          } else {
+            // Check if all markers have the same lat/lng (single-location cluster)
+            const sameLocation = markers.every(
+              m => m.getPosition().lat() === markers[0].getPosition().lat() &&
+                   m.getPosition().lng() === markers[0].getPosition().lng()
+            );
+
+            const typeCounts = {};
+            markers.forEach(m => {
+              const key = `${m._type} (${m._year})`;
+              typeCounts[key] = (typeCounts[key] || 0) + m._count;
+            });
+
+            content = Object.entries(typeCounts)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join("<br>");
+
+            // If all markers are at the same location, append city/state/country
+            if (sameLocation && markers.length > 0) {
+              const m = markers[0];
+              content += `<br>${m._city || ""}, ${m._state || ""}, ${m._country || ""}`;
+            }
+          }
+
+          infoWindow.setContent(content);
           infoWindow.open({ map, anchor: clusterMarker });
         });
         clusterMarker.addListener("mouseout", () => infoWindow.close());
@@ -246,10 +376,9 @@ function makeRenderer(color, stroke, isRedCluster = false) {
   };
 }
 
-window.initMap = initMap;
+window.initMap=initMap;
 </script>
-
-<script async defer
+<script async
   src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAHX58A6JxigzMs0tFNEevb1kAcq9px_J4&callback=initMap">
 </script>
 </body>
