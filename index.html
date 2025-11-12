@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Interactive Map</title>
+  <title>VGR Tablet Map</title>
   <style>
     #map { height: 100vh; width: 100%; }
     #filters {
@@ -12,6 +12,20 @@
       background: white;
       padding: 10px;
       z-index: 5;
+      border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    #search-container {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 6;
+    }
+    #searchBox {
+      width: 280px;
+      padding: 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
       border-radius: 4px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.3);
     }
@@ -31,29 +45,21 @@
   </style>
 </head>
 <body>
+
 <div id="filters">
-  <div class="dropdown">
-    <button class="dropbtn">Country ▾</button>
-    <div id="countryFilter" class="dropdown-content"></div>
-  </div>
-  <div class="dropdown">
-    <button class="dropbtn">Menu ▾</button>
-    <div id="tabletFilter" class="dropdown-content"></div>
-  </div>
-  <div class="dropdown">
-    <button class="dropbtn">Year ▾</button>
-    <div id="yearFilter" class="dropdown-content"></div>
-  </div>
-  <div class="dropdown">
-    <button class="dropbtn">Other ▾</button>
-    <div id="otherFilter" class="dropdown-content">
-      <label><input type="checkbox" id="showRed" checked> Show Error Markers</label>
-      <label><input type="checkbox" id="showInfo" checked> Show Marker Info</label>
-      <label><input type="checkbox" id="showVGRTeams" checked> Show VGR Teams</label>
-      <label><input type="checkbox" id="showYF" checked> Show YF Account Locations</label>
-    </div>
-  </div>
+  <div class="dropdown"><button class="dropbtn">Country ▾</button><div id="countryFilter" class="dropdown-content"></div></div>
+  <div class="dropdown"><button class="dropbtn">Menu ▾</button><div id="tabletFilter" class="dropdown-content"></div></div>
+  <div class="dropdown"><button class="dropbtn">Year ▾</button><div id="yearFilter" class="dropdown-content"></div></div>
+  <div class="dropdown"><button class="dropbtn">Other ▾</button><div id="otherFilter" class="dropdown-content">
+    <label><input type="checkbox" id="showRed" checked> Show Error Markers</label>
+    <label><input type="checkbox" id="showInfo" checked> Show Marker Info</label>
+    <label><input type="checkbox" id="showVGRTeams" checked> Show VGR Teams</label>
+    <label><input type="checkbox" id="showYF" checked> Show YF Account Locations</label>
+  </div></div>
 </div>
+
+<!-- <div id="search-container"><input id="searchBox" type="text" placeholder="Search Map"></div> -->
+
 
 <div id="map"></div>
 
@@ -61,11 +67,12 @@
 <script>
 const { MarkerClusterer, SuperClusterAlgorithm } = window.markerClusterer;
 
-let map, allData = [];
+let map, allData = [], routesClient;
 let greenCluster=null, redCluster=null, yfCluster=null;
 let greenMarkerObjs=[], redMarkerObjs=[], yfMarkerObjs=[];
 let greenClusterMarkerObjs=[], redClusterMarkerObjs=[], yfClusterMarkerObjs=[];
 let showRed=true, showInfo=true, showVGRTeams=true, showYF=true;
+let carMarker=null, carPathPolyline=null;
 
 async function loadData() {
   // Fetch the countries list from inside the CountryData folder
@@ -100,9 +107,67 @@ function initMap() {
     gestureHandling: "greedy",
     restriction: { latLngBounds: { north:85,south:-85,west:-180,east:180 }, strictBounds:true }
   });
+
+  routesClient = new google.maps.DirectionsService(); // <-- FIXED
+
+  const input = document.getElementById("searchBox");
+  const autocomplete = new google.maps.places.Autocomplete(input, {
+    fields: ["geometry","name","formatted_address"], types:["geocode"]
+  });
+  autocomplete.bindTo("bounds", map);
+
+  const infowindow = new google.maps.InfoWindow();
+  const searchMarker = new google.maps.Marker({ map });
+
+  autocomplete.addListener("place_changed", () => {
+    const place = autocomplete.getPlace();
+    if (!place.geometry || !place.geometry.location) return alert("No details available for: " + place.name);
+    map.panTo(place.geometry.location);
+    map.setZoom(12);
+    searchMarker.setPosition(place.geometry.location);
+    searchMarker.setVisible(true);
+    infowindow.setContent(`<strong>${place.name}</strong><br>${place.formatted_address}`);
+    infowindow.open(map, searchMarker);
+    document.getElementById("end").value = place.formatted_address;
+  });
+
   loadData();
 }
 
+// --- Routes ---
+function calculateRoute() {
+  const start=document.getElementById("start").value.trim();
+  const end=document.getElementById("end").value.trim();
+  if(!start||!end) return alert("Please enter both start and destination.");
+
+  const request = {
+    origin: start,
+    destination: end,
+    travelMode: google.maps.TravelMode.DRIVING
+  };
+
+  routesClient.route(request, (result, status) => {
+    if (status === google.maps.DirectionsStatus.OK) {
+      const route = result.routes[0].overview_path;
+      if(carPathPolyline) carPathPolyline.setMap(null);
+      carPathPolyline = new google.maps.Polyline({ path: route, strokeColor:"#FF0000", strokeOpacity:0.7, strokeWeight:5, map });
+      if(carMarker) carMarker.setMap(null);
+      carMarker = new google.maps.Marker({ position: route[0], map, icon:{ url:"https://maps.google.com/mapfiles/kml/shapes/cabs.png", scaledSize:new google.maps.Size(50,50) } });
+      animateCar(route);
+    } else {
+      alert("Route calculation failed: " + status);
+    }
+  });
+}
+
+function animateCar(path){
+  if(!path||path.length===0) return;
+  let i=0;
+  const step=()=>{ if(i<path.length){ carMarker.setPosition(path[i]); i++; setTimeout(step,50); } };
+  step();
+}
+
+// --- Filters ---
 function addToggleListener() {
   document.getElementById("showRed").addEventListener("change", e=>{ showRed=e.target.checked; drawMarkers(); });
   document.getElementById("showInfo").addEventListener("change", e=>{ showInfo=e.target.checked; drawMarkers(); });
@@ -115,17 +180,13 @@ function populateFilters() {
   const types = [...new Set(allData.map(d => d.type))].sort();
   const years = [...new Set(allData.map(d => d.year))].sort();
 
-  // Compute counts for tablet types
   const typeCounts = {};
-  allData.forEach(d => {
-    typeCounts[d.type] = (typeCounts[d.type] || 0) + (d.count || 1);
-  });
+  allData.forEach(d => { typeCounts[d.type] = (typeCounts[d.type] || 0) + (d.count || 1); });
 
   createCheckboxFilter("countryFilter", countries);
   createCheckboxFilter("tabletFilter", types, typeCounts);
   createCheckboxFilter("yearFilter", years);
 
-  // Add dropdown toggle listeners (this was missing)
   document.querySelectorAll(".dropbtn").forEach(btn=>{
     btn.addEventListener("click", e=>{
       e.stopPropagation();
@@ -135,43 +196,36 @@ function populateFilters() {
       if(!isOpen) dropdown.classList.add("show");
     });
   });
-
   document.querySelectorAll(".dropdown-content").forEach(c=>c.addEventListener("click", e=>e.stopPropagation()));
   window.addEventListener("click", ()=>document.querySelectorAll(".dropdown").forEach(d=>d.classList.remove("show")));
 }
 
-// Update createCheckboxFilter to accept counts
-function createCheckboxFilter(id, items, counts = {}) {
+function createCheckboxFilter(id, items, counts={}) {
   const container = document.getElementById(id);
-  container.innerHTML = "";
-
-  const showCounts = (id === "tabletFilter"); // Only show counts for Tablet Type
+  container.innerHTML="";
+  const showCounts = (id==="tabletFilter");
 
   const allLabel = document.createElement("label");
-  allLabel.innerHTML = `<input type="checkbox" value="all" checked> All`;
+  allLabel.innerHTML=`<input type="checkbox" value="all" checked> All`;
   container.appendChild(allLabel);
 
-  items.forEach(v => {
-    const total = counts[v] || 0;
+  items.forEach(v=>{
+    const total = counts[v]||0;
     const label = document.createElement("label");
-    label.innerHTML = showCounts
+    label.innerHTML=showCounts
       ? `<input type="checkbox" value="${v}"> ${v} (${total})`
       : `<input type="checkbox" value="${v}"> ${v}`;
     container.appendChild(label);
   });
 
   const allCheckbox = container.querySelector('input[value="all"]');
-  const others = [...container.querySelectorAll('input[type=checkbox]')].filter(cb => cb.value !== "all");
+  const others = [...container.querySelectorAll('input[type=checkbox]')].filter(cb=>cb.value!=="all");
 
-  allCheckbox.addEventListener("change", e => { 
-    if (e.target.checked) others.forEach(cb => cb.checked = false); 
-    drawMarkers(); 
-  });
-
-  others.forEach(cb => {
-    cb.addEventListener("change", e => {
-      if (e.target.checked) allCheckbox.checked = false;
-      else if (!others.some(o => o.checked)) allCheckbox.checked = true;
+  allCheckbox.addEventListener("change", e=>{ if(e.target.checked) others.forEach(cb=>cb.checked=false); drawMarkers(); });
+  others.forEach(cb=>{
+    cb.addEventListener("change", e=>{
+      if(e.target.checked) allCheckbox.checked=false;
+      else if(!others.some(o=>o.checked)) allCheckbox.checked=true;
       drawMarkers();
     });
   });
@@ -182,6 +236,7 @@ function getSelectedValues(id){
   return (checked.includes("all")||checked.length===0)?["all"]:checked;
 }
 
+// --- Markers ---
 function removeAndClear(arr){
   if(!arr||arr.length===0) return;
   arr.forEach(m=>{ try{ google.maps.event.clearInstanceListeners(m); } catch{} try{ m.setMap(null); } catch{} });
@@ -209,7 +264,8 @@ function createMarker(d){
     icon={path:google.maps.SymbolPath.CIRCLE,scale:17,fillColor:d.color,fillOpacity:0.7,strokeColor:"#000",strokeWeight:1};
     zIndex=2;
   }
-  const m=new google.maps.Marker({ position:{lat:d.lat,lng:d.lon}, icon, zIndex,
+  const m=new google.maps.Marker({
+    position:{lat:d.lat,lng:d.lon}, icon, zIndex,
     label: d.type!=="VGR Team"?{text:String(d.count||1),color:"white",fontSize:"10px",fontWeight:"bold"}:null
   });
   m._city=d.city||""; m._state=d.state||""; m._country=d.country||""; m._type=d.type; m._year=d.year; m._count=d.count||1;
@@ -239,26 +295,27 @@ function drawMarkers(){
     showVGRTeams
   );
 
-  // --- Tablet markers & cluster ---
+  // --- Tablet markers ---
   const tabletMarkers=filteredTablets.map(d=>{
     const m=createMarker(d);
     if(showInfo){
       const info=new google.maps.InfoWindow({ content:`${d.type} (${d.year}) ${d.count||1}<br>${d.city}, ${d.state}, ${d.country}` });
-      m.addListener("mouseover",()=>info.open(map,m));
-      m.addListener("mouseout",()=>info.close());
+      let closeTimeout;
+      m.addListener("mouseover",()=>{ clearTimeout(closeTimeout); info.open(map,m); });
+      m.addListener("mouseout",()=>{ closeTimeout=setTimeout(()=>info.close(),200); });
     }
     greenMarkerObjs.push(m);
     return m;
   });
   if(tabletMarkers.length>0){
-    greenCluster=new MarkerClusterer({
+    greenCluster = new MarkerClusterer({
       map, markers:tabletMarkers,
       algorithm:new SuperClusterAlgorithm({radius:100,minPoints:1,maxZoom:30}),
       renderer: makeRenderer("#41ab5d","#000",false,greenClusterMarkerObjs)
     });
   }
 
-  // --- YF markers & cluster ---
+  // --- YF markers ---
   const yfMarkers=filteredYF.map(d=>{
     const m=createMarker(d);
     if(showInfo){
@@ -270,14 +327,14 @@ function drawMarkers(){
     return m;
   });
   if(yfMarkers.length>0){
-    yfCluster=new MarkerClusterer({
+    yfCluster = new MarkerClusterer({
       map, markers:yfMarkers,
       algorithm:new SuperClusterAlgorithm({radius:100,minPoints:1,maxZoom:30}),
       renderer: makeRenderer("#FFA500","#000",false,yfClusterMarkerObjs)
     });
   }
 
-  // --- VGR Teams (blue, non-clustered) ---
+  // --- VGR Teams ---
   filteredVGRTeams.forEach(d=>{
     const m=createMarker(d);
     if(showInfo){
@@ -289,7 +346,7 @@ function drawMarkers(){
     m.setMap(map);
   });
 
-  // --- Optional: show failed markers as red ---
+  // --- Red failed markers ---
   if(showRed){
     allData.filter(d=>d.failed).forEach(d=>{
       const m=createMarker(d);
@@ -299,87 +356,55 @@ function drawMarkers(){
   }
 }
 
-function makeRenderer(color, stroke, isRedCluster = false) {
-  const clusterArr = isRedCluster ? redClusterMarkerObjs : greenClusterMarkerObjs;
+// --- Renderer ---
+function makeRenderer(color, stroke, isRedCluster=false, clusterArr=[]){
   return {
-    render: ({ count, position, markers }) => {
-      if (count === 1) {
+    render: ({ count, position, markers })=>{
+      if(count===1){
         const single = markers[0];
-        single.setZIndex(isRedCluster ? 1 : 10);
         single.setMap(map);
         clusterArr.push(single);
         return single;
       }
-
       const clusterMarker = new google.maps.Marker({
         position,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 17,
-          fillColor: color,
-          fillOpacity: 0.7,
-          strokeColor: stroke,
-          strokeWeight: 1
-        },
-        label: {
-          text: String(count),
-          color: "white",
-          fontSize: "12px",
-          fontWeight: "bold"
-        },
-        zIndex: isRedCluster ? 1 : 10
+        icon:{ path: google.maps.SymbolPath.CIRCLE, scale:17, fillColor:color, fillOpacity:0.7, strokeColor:stroke, strokeWeight:1 },
+        label:{ text:String(count), color:"white", fontSize:"12px", fontWeight:"bold" },
+        zIndex:10
       });
-
       clusterMarker.setMap(map);
       clusterArr.push(clusterMarker);
 
-      if (showInfo) {
-        const infoWindow = new google.maps.InfoWindow();
-        clusterMarker.addListener("mouseover", () => {
-          let content = "";
-
-          if (isRedCluster) {
-            const countries = [...new Set(markers.map(m => m._country))];
-            content = `Error data for ${countries.join(", ")}`;
+      if(showInfo){
+        const infoWindow=new google.maps.InfoWindow();
+        clusterMarker.addListener("mouseover",()=>{
+          let content="";
+          if(isRedCluster){
+            const countries=[...new Set(markers.map(m=>m._country))];
+            content=`Error data for ${countries.join(", ")}`;
           } else {
-            // Check if all markers have the same lat/lng (single-location cluster)
-            const sameLocation = markers.every(
-              m => m.getPosition().lat() === markers[0].getPosition().lat() &&
-                   m.getPosition().lng() === markers[0].getPosition().lng()
-            );
-
-            const typeCounts = {};
-            markers.forEach(m => {
-              const key = `${m._type} (${m._year})`;
-              typeCounts[key] = (typeCounts[key] || 0) + m._count;
-            });
-
-            content = Object.entries(typeCounts)
-              .map(([k, v]) => `${k}: ${v}`)
-              .join("<br>");
-
-            // If all markers are at the same location, append city/state/country
-            if (sameLocation && markers.length > 0) {
-              const m = markers[0];
-              content += `<br>${m._city || ""}, ${m._state || ""}, ${m._country || ""}`;
+            const typeCounts={};
+            markers.forEach(m=>{ const key=`${m._type} (${m._year})`; typeCounts[key]=(typeCounts[key]||0)+m._count; });
+            content=Object.entries(typeCounts).map(([k,v])=>`${k}: ${v}`).join("<br>");
+            if(markers.every(m=>m.getPosition().lat()===markers[0].getPosition().lat() && m.getPosition().lng()===markers[0].getPosition().lng())){
+              const m=markers[0]; content+=`<br>${m._city}, ${m._state}, ${m._country}`;
             }
           }
-
           infoWindow.setContent(content);
           infoWindow.open({ map, anchor: clusterMarker });
         });
-        clusterMarker.addListener("mouseout", () => infoWindow.close());
+        clusterMarker.addListener("mouseout",()=>infoWindow.close());
       }
-
       return clusterMarker;
     }
-  };
+  }
 }
 
-window.initMap=initMap;
 </script>
+
 <script async
-  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAHX58A6JxigzMs0tFNEevb1kAcq9px_J4&callback=initMap">
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAHX58A6JxigzMs0tFNEevb1kAcq9px_J4&callback=initMap&libraries=places,routes,geometry">
 </script>
+
 </body>
 </html>
