@@ -99,7 +99,7 @@ async function loadData() {
 function initMap() {
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: -25.0, lng: 133.0 }, zoom: 2,
-    minZoom: 1, maxZoom: 18,
+    maxZoom: 18,
     mapTypeId: 'roadmap',
     streetViewControl: false,
     mapTypeControl: false,
@@ -411,4 +411,5 @@ function makeRenderer(color, stroke, isRedCluster=false, clusterArr=[]){
 
 </body>
 </html>
+
 
