@@ -1,0 +1,24 @@
+[
+  {
+    "type": "Hero",
+    "city": "Port Vila",
+    "state": "SW Pacific",
+    "country": "Vanuatu",
+    "year": "Unknown",
+    "color": "#41ab5d",
+    "lat": -17.742979,
+    "lon": 168.3173027,
+    "failed": false
+  },
+  {
+    "type": "YF",
+    "city": "Port Vila",
+    "state": "South Pacific",
+    "country": "Vanuatu",
+    "year": "Unknown",
+    "color": "#FFA500",
+    "lat": -17.7474311,
+    "lon": 168.3155574,
+    "failed": false
+  }
+]

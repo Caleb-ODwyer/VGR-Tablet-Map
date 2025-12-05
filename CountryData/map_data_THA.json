@@ -1,0 +1,13 @@
+[
+  {
+    "type": "Hero",
+    "city": "District Maesuai",
+    "state": "Chiang rai",
+    "country": "Thailand",
+    "year": "Unknown",
+    "color": "#41ab5d",
+    "lat": 19.6501063,
+    "lon": 99.5006143,
+    "failed": false
+  }
+]
